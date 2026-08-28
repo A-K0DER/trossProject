@@ -4,10 +4,16 @@ A hosted HTTPS API that takes a LinkedIn profile URL and returns structured JSON
 headline, location, about, experience, certifications, languages, and more — by calling
 LinkedIn's internal **Voyager** API directly over HTTP. There is no browser automation
 anywhere in the request path; authentication and every profile field are fetched with
-plain HTTP requests using a logged-in LinkedIn session's cookies.
+plain HTTP requests using a logged-in LinkedIn session's cookies, which the caller
+supplies per-request (not stored server-side).
 
 ```
-GET /api/profile?url=https://www.linkedin.com/in/some-person/
+POST /api/profile
+{
+  "url": "https://www.linkedin.com/in/some-person/",
+  "liAt": "<your li_at cookie value>",
+  "jsessionId": "<your JSESSIONID cookie value>"
+}
 ```
 
 ## Table of contents
@@ -43,7 +49,10 @@ A few things fell out of that process that shaped the design:
   `li_at` cookie (long-lived session token) and `JSESSIONID` cookie (also doubles as
   the CSRF token, sent back as the `csrf-token` header) are enough to call these
   endpoints directly with `axios`. No browser, headless or otherwise, is involved at
-  request time — see `src/linkedin/httpClient.ts`.
+  request time — see `src/linkedin/httpClient.ts`. These cookies are supplied by the
+  caller in each `POST /api/profile` request body (`liAt` / `jsessionId`), not held as
+  server-side secrets — a fresh `axios` client is built per request from whatever
+  credentials that request provides.
 - **The `Accept` header matters more than it looks.** Requests without
   `Accept: application/vnd.linkedin.normalized+json+2.1` return a near-empty stub
   response with `200 OK` — no error, just silently degraded data. This is the kind of
@@ -101,7 +110,8 @@ None of this makes automated access compliant with LinkedIn's Terms of Service �
 
 These are session credentials, not API keys — treat `li_at` like a password. It
 typically stays valid for ~1 year unless you log out, but LinkedIn can invalidate it
-sooner (e.g. suspicious activity, password change).
+sooner (e.g. suspicious activity, password change). You'll pass these values directly
+in each API call (step 4) rather than storing them on the server.
 
 ### 2. Configure environment
 
@@ -109,9 +119,9 @@ sooner (e.g. suspicious activity, password change).
 cp .env.example .env
 ```
 
-Fill in `LINKEDIN_LI_AT` and `LINKEDIN_JSESSIONID` from step 1. Set your own `API_KEY`
-(any string you choose) — this is the key *your* API's clients will send, not
-anything LinkedIn-related. See `.env.example` for all options.
+Set your own `API_KEY` (any string you choose) — this is the key *your* API's clients
+will send, not anything LinkedIn-related. See `.env.example` for all options; the
+server has no LinkedIn-specific configuration.
 
 ### 3. Install, build, run
 
@@ -127,8 +137,14 @@ The server listens on `PORT` (default `3000`).
 ### 4. Try it
 
 ```bash
-curl -H "x-api-key: $API_KEY" \
-  "http://localhost:3000/api/profile?url=https://www.linkedin.com/in/some-person/"
+curl -X POST "http://localhost:3000/api/profile" \
+  -H "x-api-key: $API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "url": "https://www.linkedin.com/in/some-person/",
+    "liAt": "<your li_at cookie value>",
+    "jsessionId": "<your JSESSIONID cookie value>"
+  }'
 ```
 
 Or open **`http://localhost:3000/docs`** for interactive Swagger UI — it documents
@@ -150,12 +166,24 @@ same as any other client.
 
 No auth required. Returns `{"status": "ok"}` — useful as a deploy health check.
 
-### `GET /api/profile?url=<linkedin-profile-url>`
+### `POST /api/profile`
 
 Requires header `x-api-key: <your API_KEY>` if `API_KEY` is set.
 
-`url` accepts a full profile URL (`https://www.linkedin.com/in/some-person/`) or a
-bare public identifier (`some-person`).
+**Request body** (`application/json`):
+
+```jsonc
+{
+  "url": "https://www.linkedin.com/in/some-person/", // full URL or bare public identifier
+  "liAt": "...",        // required: your `li_at` cookie value
+  "jsessionId": "...",  // required: your `JSESSIONID` cookie value
+  "userAgent": "..."    // optional: defaults to a recent Chrome UA if omitted
+}
+```
+
+`liAt` and `jsessionId` are live LinkedIn session credentials — this API does not
+store, log, or cache them; they're used to build a single outbound `axios` client for
+the duration of that one request. See [Setup](#setup) for how to obtain them.
 
 **Response** (`200`):
 
@@ -208,21 +236,53 @@ in `warnings` — see [Known limitations](#known-limitations).
 
 | Status | Meaning |
 |---|---|
-| `400` | Missing/invalid `url`, or not a LinkedIn profile URL |
+| `400` | Missing/invalid `url`, `liAt`, or `jsessionId`, or `url` is not a LinkedIn profile URL |
 | `401` | Missing/invalid `x-api-key` |
 | `429` | You've exceeded this API's own rate limit |
 | `502` | LinkedIn rejected the upstream request (expired cookies) or returned something unexpected |
 
 ## Deployment
 
-Any Node-capable host works (the `Dockerfile` in this repo builds a minimal
-production image). Whichever you choose:
+### Any Node-capable host
 
-1. Set `LINKEDIN_LI_AT`, `LINKEDIN_JSESSIONID`, and `API_KEY` as the platform's
-   **secret/environment variables** — never commit them.
+The `Dockerfile` in this repo builds a minimal production image. Whichever
+platform you choose (Render/Railway/Fly):
+
+1. Set `API_KEY` as the platform's **secret/environment variable** — never commit it.
+   LinkedIn session cookies are not server config; clients send them per-request (see
+   [API documentation](#api-documentation)).
 2. Point the platform at `npm run build && npm start` (or use the Dockerfile).
-3. Confirm HTTPS is terminated by the platform (Render/Railway/Fly all do this by
-   default on their generated domains).
+3. Confirm HTTPS is terminated by the platform (all three do this by default on
+   their generated domains).
+
+### Cloudflare (Containers)
+
+The app also ships with a `wrangler.jsonc` that runs the same Docker image on
+[Cloudflare Containers](https://developers.cloudflare.com/containers/) (beta),
+fronted by a thin Worker (`worker/index.ts`) that routes every request to a
+single always-the-same container instance — this API isn't designed to be
+horizontally scaled, so a singleton is intentional, not a limitation.
+
+1. `npm install` (pulls in `wrangler` and `@cloudflare/containers` as dev deps).
+2. Make sure Docker is running locally — `wrangler` builds the container image
+   with your local Docker daemon before pushing it.
+3. Set the secret (never in `wrangler.jsonc`, never committed) — LinkedIn cookies are
+   not server config here either, they still come from the caller per-request:
+   ```
+   npx wrangler secret put API_KEY
+   ```
+4. Deploy: `npm run cf:deploy` (runs `wrangler deploy`). First deploy takes a
+   few minutes while the image is built and distributed globally.
+5. `npm run cf:dev` runs it locally against the same container image.
+
+Notes specific to this path:
+- `instance_type: "basic"` (1/4 vCPU, 1 GiB) in `wrangler.jsonc` — bump it if
+  you see memory pressure, or drop to `"lite"` to cut cost further.
+- `sleepAfter: "10m"` in `worker/index.ts` controls how long the container
+  stays warm between requests; the first request after a sleep pays a ~2-3s
+  cold start.
+- `.dockerignore` excludes `node_modules`, `.env`, and `worker/` from the
+  image build context — the container only needs `dist/` and production deps.
 
 ## Known limitations
 
@@ -237,10 +297,11 @@ production image). Whichever you choose:
   DevTools Network tab while viewing a profile, add a fetcher following the pattern
   of `fetchTopCard.ts`, and drop it in.
 - **Session cookies expire/rotate.** If `li_at` is invalidated (logout, password
-  change, LinkedIn flagging the session), every request fails with a `502` and a
-  message telling you to refresh `.env`. There's no automated re-login — that would
-  require handling LinkedIn's login form, 2FA, and CAPTCHA challenges, all of which
-  are explicitly out of scope for a credential-based integration like this one.
+  change, LinkedIn flagging the session), every request fails with a `502` telling you
+  the provided cookies are likely invalid or expired — get fresh ones from your
+  browser and pass them again. There's no automated re-login — that would require
+  handling LinkedIn's login form, 2FA, and CAPTCHA challenges, all of which are
+  explicitly out of scope for a credential-based integration like this one.
 - **Ban / throttling risk is real and not fully eliminable.** The politeness
   measures above reduce risk but LinkedIn can still flag an account for automated
   access patterns. Use an account you're comfortable putting at risk, and expect to

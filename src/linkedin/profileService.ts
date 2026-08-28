@@ -10,6 +10,7 @@ import {
   parseSimpleEntry,
 } from "./parse/parseCollections";
 import { LinkedInProfileResponse } from "./schema";
+import { createLinkedInClient, LinkedInCredentials } from "./httpClient";
 
 /**
  * Education and skills have no known-working reverse-engineered endpoint
@@ -23,20 +24,22 @@ const UNAVAILABLE_SECTIONS_WARNING =
   "education and skills could not be retrieved: LinkedIn has retired the REST endpoints these used to be served from (410 Gone) and replaced them with a GraphQL persisted-query API whose query IDs rotate per deploy. See README 'Known limitations'.";
 
 export async function getLinkedInProfile(
-  requestedUrl: string
+  requestedUrl: string,
+  credentials: LinkedInCredentials
 ): Promise<LinkedInProfileResponse> {
   const publicIdentifier = extractPublicIdentifier(requestedUrl);
+  const client = createLinkedInClient(credentials);
 
   const [topCardRaw, experienceResult, certifications, languages, projects, honors, publications, volunteerExperience] =
     await Promise.all([
-      fetchTopCard(publicIdentifier),
-      fetchExperience(publicIdentifier),
-      fetchSimpleCollection(publicIdentifier, "certifications"),
-      fetchSimpleCollection(publicIdentifier, "languages"),
-      fetchSimpleCollection(publicIdentifier, "projects"),
-      fetchSimpleCollection(publicIdentifier, "honors"),
-      fetchSimpleCollection(publicIdentifier, "publications"),
-      fetchSimpleCollection(publicIdentifier, "volunteerExperiences"),
+      fetchTopCard(client, publicIdentifier),
+      fetchExperience(client, publicIdentifier),
+      fetchSimpleCollection(client, publicIdentifier, "certifications"),
+      fetchSimpleCollection(client, publicIdentifier, "languages"),
+      fetchSimpleCollection(client, publicIdentifier, "projects"),
+      fetchSimpleCollection(client, publicIdentifier, "honors"),
+      fetchSimpleCollection(client, publicIdentifier, "publications"),
+      fetchSimpleCollection(client, publicIdentifier, "volunteerExperiences"),
     ]);
 
   const warnings: string[] = [UNAVAILABLE_SECTIONS_WARNING];

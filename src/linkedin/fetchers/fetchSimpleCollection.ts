@@ -1,3 +1,4 @@
+import { AxiosInstance } from "axios";
 import { voyagerGet } from "../httpClient";
 import { RestliCollectionResponse, RestliElement } from "../types";
 
@@ -10,6 +11,7 @@ import { RestliCollectionResponse, RestliElement } from "../types";
  * actual field data for these simpler resource types.
  */
 export async function fetchSimpleCollection(
+  client: AxiosInstance,
   publicIdentifier: string,
   resource: string
 ): Promise<RestliElement[]> {
@@ -17,7 +19,7 @@ export async function fetchSimpleCollection(
     publicIdentifier
   )}/${resource}`;
 
-  const res = await voyagerGet<RestliCollectionResponse>(path, {
+  const res = await voyagerGet<RestliCollectionResponse>(client, path, {
     allowMissing: true,
   });
 

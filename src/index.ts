@@ -1,7 +1,5 @@
 import { createApp } from "./app";
-import { config, assertLinkedInCredentialsConfigured } from "./config";
-
-assertLinkedInCredentialsConfigured();
+import { config } from "./config";
 
 const app = createApp();
 

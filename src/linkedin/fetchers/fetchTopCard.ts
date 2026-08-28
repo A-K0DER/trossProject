@@ -1,3 +1,4 @@
+import { AxiosInstance } from "axios";
 import { voyagerGet } from "../httpClient";
 import { RestliFinderResponse, RestliElement } from "../types";
 
@@ -13,13 +14,14 @@ import { RestliFinderResponse, RestliElement } from "../types";
  * layer.
  */
 export async function fetchTopCard(
+  client: AxiosInstance,
   publicIdentifier: string
 ): Promise<RestliElement | null> {
   const path = `/identity/dash/profiles?q=memberIdentity&memberIdentity=${encodeURIComponent(
     publicIdentifier
   )}`;
 
-  const res = await voyagerGet<RestliFinderResponse>(path, {
+  const res = await voyagerGet<RestliFinderResponse>(client, path, {
     allowMissing: true,
   });
 

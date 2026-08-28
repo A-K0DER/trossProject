@@ -3,11 +3,21 @@ import { config } from "../config";
 
 const VOYAGER_BASE = "https://www.linkedin.com/voyager/api";
 
+export interface LinkedInCredentials {
+  liAt: string;
+  jsessionId: string;
+  userAgent?: string;
+}
+
 /**
  * A politeness gate: LinkedIn aggressively rate-limits and fingerprints
  * scraping traffic. Serializing outbound requests with a minimum spacing
  * is cheap insurance against tripping anti-abuse systems and is far more
  * important here than raw throughput.
+ *
+ * This is shared across all callers/credentials on purpose — it protects
+ * this server's own outbound traffic pattern regardless of whose LinkedIn
+ * session is being used.
  *
  * Callers (e.g. profileService's Promise.all over several sections) may
  * invoke this concurrently, so it's implemented as a promise chain — each
@@ -29,10 +39,10 @@ function throttle(): Promise<void> {
   return next;
 }
 
-let client: AxiosInstance | null = null;
-
 /**
- * A single shared axios instance carrying the LinkedIn session cookies.
+ * Builds a fresh axios instance carrying the caller-supplied LinkedIn
+ * session cookies. Credentials arrive per-request (see routes/profile.ts)
+ * rather than being held server-side, so there is no shared/cached client.
  *
  * The `csrf-token` header must equal the (unquoted) JSESSIONID cookie value
  * — LinkedIn's Voyager API rejects same-origin-looking requests without it.
@@ -41,20 +51,20 @@ let client: AxiosInstance | null = null;
  * near-empty stub — omitting it silently degrades responses rather than
  * erroring, which makes it an easy thing to miss while reverse engineering.
  */
-export function getLinkedInClient(): AxiosInstance {
-  if (client) return client;
+export function createLinkedInClient(
+  credentials: LinkedInCredentials
+): AxiosInstance {
+  const cookie = `li_at=${credentials.liAt}; JSESSIONID="${credentials.jsessionId}"`;
 
-  const cookie = `li_at=${config.linkedin.liAt}; JSESSIONID="${config.linkedin.jsessionId}"`;
-
-  client = axios.create({
+  return axios.create({
     baseURL: VOYAGER_BASE,
     timeout: 15_000,
     headers: {
       Cookie: cookie,
-      "csrf-token": config.linkedin.jsessionId,
+      "csrf-token": credentials.jsessionId,
       Accept: "application/vnd.linkedin.normalized+json+2.1",
       "x-restli-protocol-version": "2.0.0",
-      "User-Agent": config.linkedin.userAgent,
+      "User-Agent": credentials.userAgent ?? config.linkedin.defaultUserAgent,
       "Accept-Language": "en-US,en;q=0.9",
     },
     validateStatus: () => true, // we handle status codes ourselves
@@ -64,8 +74,6 @@ export function getLinkedInClient(): AxiosInstance {
     // auth failure instead.
     maxRedirects: 0,
   });
-
-  return client;
 }
 
 export class LinkedInApiError extends Error {
@@ -80,18 +88,19 @@ export class LinkedInApiError extends Error {
 }
 
 /**
- * GET a Voyager path with the shared authenticated client, throttled.
- * Treats 404/410 as "resource not available" rather than throwing, since
- * several profile sections legitimately 410 (deprecated) or 404 (not
- * applicable to a given profile) — callers decide how to handle that via
- * `allowMissing`.
+ * GET a Voyager path with the given (per-request) authenticated client,
+ * throttled. Treats 404/410 as "resource not available" rather than
+ * throwing, since several profile sections legitimately 410 (deprecated)
+ * or 404 (not applicable to a given profile) — callers decide how to
+ * handle that via `allowMissing`.
  */
 export async function voyagerGet<T>(
+  client: AxiosInstance,
   path: string,
   opts: { allowMissing?: boolean } = {}
 ): Promise<T | null> {
   await throttle();
-  const res = await getLinkedInClient().get(path);
+  const res = await client.get(path);
 
   if (res.status === 200) {
     return res.data as T;
@@ -103,7 +112,7 @@ export async function voyagerGet<T>(
 
   if (res.status === 401 || res.status === 403 || (res.status >= 300 && res.status < 400)) {
     throw new LinkedInApiError(
-      "LinkedIn rejected the request as unauthenticated (redirected to login or returned 401/403) — the li_at/JSESSIONID cookies are likely missing, invalid, or expired. Log into linkedin.com again and refresh them in .env.",
+      "LinkedIn rejected the request as unauthenticated (redirected to login or returned 401/403) — the provided liAt/jsessionId cookies are likely missing, invalid, or expired. Log into linkedin.com again and pass fresh values.",
       res.status,
       path
     );

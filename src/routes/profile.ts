@@ -5,13 +5,43 @@ import { getCached, setCached } from "../cache";
 
 export const profileRouter = Router();
 
-profileRouter.get("/profile", async (req, res, next) => {
+function requireStringField(
+  body: Record<string, unknown>,
+  field: string
+): string | null {
+  const value = body[field];
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return null;
+  }
+  return value;
+}
+
+profileRouter.post("/profile", async (req, res, next) => {
   try {
-    const url = req.query.url;
-    if (typeof url !== "string" || url.trim().length === 0) {
-      res.status(400).json({ error: "Query parameter `url` is required." });
+    const body = (req.body ?? {}) as Record<string, unknown>;
+
+    const url = requireStringField(body, "url");
+    if (!url) {
+      res.status(400).json({ error: "Body field `url` is required." });
       return;
     }
+
+    const liAt = requireStringField(body, "liAt");
+    if (!liAt) {
+      res.status(400).json({ error: "Body field `liAt` is required." });
+      return;
+    }
+
+    const jsessionId = requireStringField(body, "jsessionId");
+    if (!jsessionId) {
+      res.status(400).json({ error: "Body field `jsessionId` is required." });
+      return;
+    }
+
+    const userAgent =
+      typeof body.userAgent === "string" && body.userAgent.trim().length > 0
+        ? body.userAgent
+        : undefined;
 
     const publicIdentifier = extractPublicIdentifier(url);
 
@@ -21,7 +51,11 @@ profileRouter.get("/profile", async (req, res, next) => {
       return;
     }
 
-    const profile = await getLinkedInProfile(url);
+    const profile = await getLinkedInProfile(url, {
+      liAt,
+      jsessionId,
+      userAgent,
+    });
     setCached(publicIdentifier, profile);
     res.json(profile);
   } catch (err) {

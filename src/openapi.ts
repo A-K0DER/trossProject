@@ -8,7 +8,7 @@ export const openapiSpec = {
     title: "LinkedIn Profile API",
     version: "1.0.0",
     description:
-      "Takes a LinkedIn profile URL and returns structured JSON by calling LinkedIn's internal Voyager API directly over HTTP (no browser automation at request time). See the README for the reverse-engineering approach and known limitations.",
+      "Takes a LinkedIn profile URL and returns structured JSON by calling LinkedIn's internal Voyager API directly over HTTP (no browser automation at request time). LinkedIn session cookies are supplied per-request in the request body, not held server-side. See the README for the reverse-engineering approach and known limitations.",
   },
   servers: [{ url: "/" }],
   tags: [
@@ -157,6 +157,34 @@ export const openapiSpec = {
           error: { type: "string" },
         },
       },
+      ProfileRequest: {
+        type: "object",
+        required: ["url", "liAt", "jsessionId"],
+        properties: {
+          url: {
+            type: "string",
+            description:
+              "A full profile URL (https://www.linkedin.com/in/some-person/) or a bare public identifier (some-person).",
+            example: "https://www.linkedin.com/in/some-person/",
+          },
+          liAt: {
+            type: "string",
+            description:
+              "The `li_at` cookie value from a logged-in linkedin.com session. Treat like a password — this is a live session credential, not an API key.",
+          },
+          jsessionId: {
+            type: "string",
+            description:
+              "The `JSESSIONID` cookie value from the same session (copy just the value between the literal quotes LinkedIn stores it with).",
+          },
+          userAgent: {
+            type: "string",
+            nullable: true,
+            description:
+              "Optional. The User-Agent the cookies were issued to. Falls back to a default if omitted.",
+          },
+        },
+      },
     },
   },
   paths: {
@@ -181,21 +209,18 @@ export const openapiSpec = {
       },
     },
     "/api/profile": {
-      get: {
+      post: {
         tags: ["Profile"],
         summary: "Fetch a structured LinkedIn profile",
         security: [{ apiKeyAuth: [] }],
-        parameters: [
-          {
-            name: "url",
-            in: "query",
-            required: true,
-            schema: { type: "string" },
-            description:
-              "A full profile URL (https://www.linkedin.com/in/some-person/) or a bare public identifier (some-person).",
-            example: "https://www.linkedin.com/in/some-person/",
+        requestBody: {
+          required: true,
+          content: {
+            "application/json": {
+              schema: { $ref: "#/components/schemas/ProfileRequest" },
+            },
           },
-        ],
+        },
         responses: {
           "200": {
             description: "Structured profile data",
@@ -206,7 +231,8 @@ export const openapiSpec = {
             },
           },
           "400": {
-            description: "Missing/invalid `url`, or not a LinkedIn profile URL",
+            description:
+              "Missing/invalid `url`, `liAt`, or `jsessionId`, or `url` is not a LinkedIn profile URL",
             content: {
               "application/json": { schema: { $ref: "#/components/schemas/Error" } },
             },

@@ -1,3 +1,4 @@
+import { AxiosInstance } from "axios";
 import { voyagerGet } from "../httpClient";
 import { RestliCollectionResponse, RestliElement } from "../types";
 
@@ -15,13 +16,14 @@ export interface PositionGroupsResult {
  * survives and returns full experience data.
  */
 export async function fetchExperience(
+  client: AxiosInstance,
   publicIdentifier: string
 ): Promise<PositionGroupsResult> {
   const path = `/identity/profiles/${encodeURIComponent(
     publicIdentifier
   )}/positionGroups`;
 
-  const res = await voyagerGet<RestliCollectionResponse>(path, {
+  const res = await voyagerGet<RestliCollectionResponse>(client, path, {
     allowMissing: true,
   });
 
