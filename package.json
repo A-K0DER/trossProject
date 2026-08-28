@@ -11,7 +11,7 @@
     "cf:dev": "wrangler dev",
     "cf:deploy": "wrangler deploy",
     "vercel:dev": "vercel dev",
-    "vercel:deploy": "vercel deploy --prod"
+    "vercel:deploy": "vercel deploy --prod --yes"
   },
   "license": "MIT",
   "dependencies": {
