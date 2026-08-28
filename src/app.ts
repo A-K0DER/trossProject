@@ -1,7 +1,9 @@
 import express from "express";
 import rateLimit from "express-rate-limit";
+import swaggerUi from "swagger-ui-express";
 import { requireApiKey } from "./middleware/apiKey";
 import { errorHandler } from "./middleware/errorHandler";
+import { openapiSpec } from "./openapi";
 import { healthRouter } from "./routes/health";
 import { profileRouter } from "./routes/profile";
 
@@ -10,6 +12,12 @@ export function createApp() {
 
   app.use(express.json());
   app.use(healthRouter);
+
+  // Interactive API docs + "try it out" console. Unauthenticated and
+  // outside the /api rate limiter — it's just documentation, and its own
+  // "Try it out" requests still go through the real x-api-key check below.
+  app.get("/openapi.json", (_req, res) => res.json(openapiSpec));
+  app.use("/docs", swaggerUi.serve, swaggerUi.setup(openapiSpec));
 
   // Caps requests per client IP against *our* API. This is the main
   // defense against someone using a public deployment to hammer LinkedIn

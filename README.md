@@ -15,6 +15,7 @@ GET /api/profile?url=https://www.linkedin.com/in/some-person/
 - [Approach](#approach)
 - [Setup](#setup)
 - [API documentation](#api-documentation)
+  - [Interactive docs (Swagger)](#get-docs)
 - [Deployment](#deployment)
 - [Known limitations](#known-limitations)
 - [Legal / ethical note](#legal--ethical-note)
@@ -130,7 +131,20 @@ curl -H "x-api-key: $API_KEY" \
   "http://localhost:3000/api/profile?url=https://www.linkedin.com/in/some-person/"
 ```
 
+Or open **`http://localhost:3000/docs`** for interactive Swagger UI — it documents
+every route from the OpenAPI spec in `src/openapi.ts` and has a "Try it out" button
+that fires real requests against your running server (use the padlock icon to set
+your `x-api-key` once, then it's sent on every request from the UI). The raw spec is
+also served as JSON at `/openapi.json` if you want to import it into Postman/Insomnia
+instead.
+
 ## API documentation
+
+### `GET /docs`
+
+Interactive Swagger UI for exploring and testing the API in the browser. No auth
+required to view; calling `/api/profile` from it still requires a valid `x-api-key`,
+same as any other client.
 
 ### `GET /health`
 
