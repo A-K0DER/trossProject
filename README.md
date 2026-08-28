@@ -255,13 +255,45 @@ platform you choose (Render/Railway/Fly):
 3. Confirm HTTPS is terminated by the platform (all three do this by default on
    their generated domains).
 
-### Cloudflare (Containers)
+### Vercel (free, recommended if you want zero-cost hosting)
+
+The app also ships with `vercel.json` + `api/index.ts`, which run the existing
+Express app as a single Node.js Serverless Function on Vercel's free Hobby
+plan — no rewrite needed (Vercel Functions are full Node.js, not an edge/V8
+runtime), no billing required.
+
+1. `npm install` (pulls in `vercel` as a dev dep).
+2. `npx vercel login`, then `npx vercel link` to connect this repo to a Vercel
+   project (first time only).
+3. Set the secret — LinkedIn cookies are still per-request, not server config:
+   ```
+   npx vercel env add API_KEY production
+   ```
+4. Deploy: `npm run vercel:deploy` (runs `vercel deploy --prod`).
+5. `npm run vercel:dev` runs it locally against the same function build.
+
+Note: `vercel.json` uses the legacy `builds`/`routes` config (not
+`rewrites`/`functions`) *on purpose* — Vercel's zero-config Express detection
+scans for a file literally named `app.ts`/`index.ts`/`server.ts` (this repo
+has `src/app.ts`) and, if left on, builds *that* as a second, separate
+function expecting a default-exported app instance; `src/app.ts` exports a
+`createApp()` factory instead, so the auto-detected function crashes with
+`FUNCTION_INVOCATION_FAILED`. `builds`/`routes` disables that auto-detection
+entirely so only `api/index.ts` (which does `export default createApp()`) is
+built and serves every route.
+
+### Cloudflare (Containers) — requires Workers Paid plan
 
 The app also ships with a `wrangler.jsonc` that runs the same Docker image on
 [Cloudflare Containers](https://developers.cloudflare.com/containers/) (beta),
 fronted by a thin Worker (`worker/index.ts`) that routes every request to a
 single always-the-same container instance — this API isn't designed to be
 horizontally scaled, so a singleton is intentional, not a limitation.
+
+**This path is not free** — deploying a container image requires the Workers
+Paid plan ($5/mo); Cloudflare's API rejects the container push with `401
+Unauthorized: ... requires the Workers Paid plan` on the Free plan. Prefer the
+Vercel path above unless you specifically want Cloudflare.
 
 1. `npm install` (pulls in `wrangler` and `@cloudflare/containers` as dev deps).
 2. Make sure Docker is running locally — `wrangler` builds the container image
