@@ -231,6 +231,16 @@ production image). Whichever you choose:
   measures above reduce risk but LinkedIn can still flag an account for automated
   access patterns. Use an account you're comfortable putting at risk, and expect to
   need to refresh cookies occasionally.
+  - **Observed in practice:** during development, after a couple of automated
+    requests the account's session cookies started getting revoked (server responds
+    `302` with `Set-Cookie: li_at=delete me; Max-Age=0`) within minutes of a fresh
+    login — even from the same residential IP/timezone the cookie was issued to, so
+    it wasn't an IP-mismatch fingerprint. This looks like LinkedIn's fraud detection
+    putting the account under heightened scrutiny after the first couple of
+    automated-looking hits, rather than anything wrong with the request shape. Once
+    an account is in this state, new logins get revoked almost immediately and
+    repeated attempts likely make it worse — the practical mitigation is a long
+    cooldown (hours) before retrying, or testing with an account not already flagged.
 - **Field coverage on certifications/languages/projects/etc. is best-effort.** Those
   endpoints were confirmed live and returning valid (if empty, for the profiles used
   during development) collections, but their exact field names weren't verified
